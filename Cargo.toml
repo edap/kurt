@@ -23,12 +23,16 @@ glob = "0.3"
 
 [dependencies]
 anyhow = "1.0"
-image = "0.23"
 winit = "0.26"
 cgmath = "0.18"
 env_logger = "0.9"
 log = "0.4"
-wgpu = "0.12"
+wgpu = { version = "0.12", git="https://github.com/gfx-rs/wgpu", branch="gecko"}
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }
-tobj = "3.0"
+tobj = { version = "3.2", features = ["async"]}
+
+[dependencies.image]
+version = "0.24"
+default-features = false
+features = ["png", "jpeg"]
