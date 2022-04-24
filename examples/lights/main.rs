@@ -139,11 +139,12 @@ fn create_render_pipeline(
     depth_format: Option<wgpu::TextureFormat>,
     vertex_layouts: &[wgpu::VertexBufferLayout],
     shader: wgpu::ShaderModuleDescriptor,
+    name: String,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(&shader);
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Render Pipeline"),
+        label: Some(&name.to_string()),
         layout: Some(layout),
         vertex: wgpu::VertexState {
             module: &shader,
@@ -405,6 +406,7 @@ impl State {
                 Some(Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc(), InstanceRaw::desc()],
                 shader,
+                "Render pipeline".to_string(),
             )
         };
 
@@ -425,6 +427,7 @@ impl State {
                 Some(Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc()],
                 shader,
+                "Light pipeline".to_string(),
             )
         };
 
