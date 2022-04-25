@@ -186,6 +186,7 @@ fn create_render_pipeline(
         multiview: None,
     })
 }
+
 impl State {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
