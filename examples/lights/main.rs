@@ -1,7 +1,3 @@
-// TODO, eri arrivato qui "With all that we'll end up with something like this.", ma non va come nell'esempio
-// https://sotrh.github.io/learn-wgpu/intermediate/tutorial10-lighting/#seeing-the-light
-// https://github.com/sotrh/learn-wgpu/blob/master/code/intermediate/tutorial10-lighting/src/lib.rs
-
 use cgmath::prelude::*;
 
 use std::iter;
@@ -15,7 +11,7 @@ use winit::{
 
 use kurt::scene::light::LightUniform;
 use kurt::scene::model::DrawLight;
-use kurt::scene::model::DrawModelWithLight;
+use kurt::scene::model::DrawModelWithLighting;
 use kurt::scene::{camera::Camera, model};
 use kurt::scene::{camera::CameraController, model::Vertex};
 use kurt::scene::{camera::CameraUniform, model::Model};
@@ -532,7 +528,7 @@ impl State {
                 &self.light_bind_group,
             );
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw_model_instanced_with_light(
+            render_pass.draw_model_instanced_with_lighting(
                 &self.obj_model,
                 0..self.instances.len() as u32,
                 &self.camera_bind_group,

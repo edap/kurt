@@ -9,14 +9,16 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+use kurt::scene::camera::Camera;
 use kurt::scene::camera::CameraUniform;
 use kurt::scene::light::LightUniform;
+
+use kurt::scene::camera::CameraController;
 use kurt::scene::model::Model;
 use kurt::scene::model::ModelVertex;
-use kurt::scene::model::Vertex;
-use kurt::scene::{camera::Camera, model::DrawModel};
-use kurt::scene::{camera::CameraController, model::DrawModelWithLight};
 use kurt::texture::texture::Texture;
+
+use kurt::scene::model::{DrawLight, DrawModelWithLighting, Vertex};
 
 // How many instances?
 const NUM_INSTANCES_PER_ROW: u32 = 10;
@@ -37,15 +39,7 @@ impl Instance {
     }
 }
 
-// this is the instance that we will pass to the shader through the instance buffer, as bytes
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
-    model: [[f32; 4]; 4],
-}
-
-impl InstanceRaw {
-    // create a vertexBufferLayout for the InstanceRaw buffer
+impl Vertex for InstanceRaw {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
         wgpu::VertexBufferLayout {
@@ -63,8 +57,7 @@ impl InstanceRaw {
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
-                // for each vec4. We'll have to reassemble the mat4 in
-                // the shader.
+                // for each vec4. We don't have to do this in code though.
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 6,
@@ -80,9 +73,31 @@ impl InstanceRaw {
                     shader_location: 8,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
+                    shader_location: 9,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
+                    shader_location: 10,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
+                    shader_location: 11,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
             ],
         }
     }
+}
+
+// this is the instance that we will pass to the shader through the instance buffer, as bytes
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct InstanceRaw {
+    model: [[f32; 4]; 4],
 }
 
 fn create_render_pipeline(
@@ -168,6 +183,7 @@ struct State {
     light_uniform: LightUniform,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
+    light_render_pipeline: wgpu::RenderPipeline,
 }
 
 impl State {
@@ -372,12 +388,10 @@ impl State {
             label: None,
         });
 
-        //Pipeline
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
+        // Depth buffer
+        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
+        //Pipeline
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -405,8 +419,27 @@ impl State {
             )
         };
 
-        // Depth buffer
-        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
+        // Light pipeline (show a white cube as light)
+        let light_render_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Light Pipeline Layout"),
+                bind_group_layouts: &[&camera_bind_group_layout, &light_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+            let shader = wgpu::ShaderModuleDescriptor {
+                label: Some("Light Shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("light.wgsl").into()),
+            };
+            create_render_pipeline(
+                &device,
+                &layout,
+                config.format,
+                Some(Texture::DEPTH_FORMAT),
+                &[ModelVertex::desc()],
+                shader,
+                "Light pipeline".to_string(),
+            )
+        };
 
         Self {
             surface,
@@ -429,6 +462,7 @@ impl State {
             light_uniform,
             light_buffer,
             light_bind_group,
+            light_render_pipeline,
         }
     }
 
@@ -459,8 +493,7 @@ impl State {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
 
-        // update light
-        // Update the light
+        // Update the light position
         let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
         self.light_uniform.position =
             (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0))
@@ -511,8 +544,16 @@ impl State {
                 }),
             });
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            // draw a white cube as light
+            render_pass.set_pipeline(&self.light_render_pipeline);
+            render_pass.draw_light_model(
+                &self.obj_model,
+                &self.camera_bind_group,
+                &self.light_bind_group,
+            );
+            // draw the instances of the cube
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw_model_instanced_with_light(
+            render_pass.draw_model_instanced_with_lighting(
                 &self.obj_model,
                 0..self.instances.len() as u32,
                 &self.camera_bind_group,
