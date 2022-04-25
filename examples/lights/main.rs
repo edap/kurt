@@ -21,16 +21,8 @@ use kurt::scene::{camera::CameraController, model::Vertex};
 use kurt::scene::{camera::CameraUniform, model::Model};
 use kurt::texture::texture::Texture;
 
-use winit::dpi::PhysicalPosition;
-
 // How many instances?
 const NUM_INSTANCES_PER_ROW: u32 = 10;
-const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-    0.0,
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-);
-
 struct Instance {
     position: cgmath::Vector3<f32>,
     rotation: cgmath::Quaternion<f32>,
