@@ -1,3 +1,7 @@
+// TODO, eri arrivato qui "With all that we'll end up with something like this.", ma non va come nell'esempio
+// https://sotrh.github.io/learn-wgpu/intermediate/tutorial10-lighting/#seeing-the-light
+// https://github.com/sotrh/learn-wgpu/blob/master/code/intermediate/tutorial10-lighting/src/lib.rs
+
 use cgmath::prelude::*;
 
 use std::iter;
@@ -16,6 +20,16 @@ use kurt::scene::{camera::Camera, camera::Projection, model};
 use kurt::scene::{camera::CameraController, model::Vertex};
 use kurt::scene::{camera::CameraUniform, model::Model};
 use kurt::texture::texture::Texture;
+
+use winit::dpi::PhysicalPosition;
+
+// How many instances?
+const NUM_INSTANCES_PER_ROW: u32 = 10;
+const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
+    NUM_INSTANCES_PER_ROW as f32 * 0.5,
+    0.0,
+    NUM_INSTANCES_PER_ROW as f32 * 0.5,
+);
 
 struct Instance {
     position: cgmath::Vector3<f32>,
