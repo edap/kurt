@@ -19,12 +19,6 @@ use kurt::texture::texture::Texture;
 
 // How many instances?
 const NUM_INSTANCES_PER_ROW: u32 = 10;
-const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-    0.0,
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-);
-
 struct Instance {
     position: cgmath::Vector3<f32>,
     rotation: cgmath::Quaternion<f32>,
@@ -90,8 +84,6 @@ impl InstanceRaw {
     }
 }
 
-const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
-
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -100,7 +92,6 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     obj_model: Model,
-    num_indices: u32,
     #[allow(dead_code)]
     diffuse_texture: Texture,
     diffuse_bind_group: wgpu::BindGroup,
@@ -238,6 +229,48 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
+        // Instances
+        const SPACE_BETWEEN: f32 = 3.0;
+        let instances = (0..NUM_INSTANCES_PER_ROW)
+            .flat_map(|z| {
+                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                    let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+                    let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+
+                    let position = cgmath::Vector3 { x, y: 0.0, z };
+
+                    let rotation = if position.is_zero() {
+                        cgmath::Quaternion::from_axis_angle(
+                            cgmath::Vector3::unit_z(),
+                            cgmath::Deg(0.0),
+                        )
+                    } else {
+                        cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
+                    };
+
+                    Instance { position, rotation }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        // Model
+        let assets_dir = std::path::Path::new("./examples/load-model/assets");
+        let obj_model = Model::load(
+            &device,
+            &queue,
+            &texture_bind_group_layout,
+            assets_dir.join("cube.obj"),
+        )
+        .unwrap();
+
+        //Pipeline
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -307,49 +340,6 @@ impl State {
             multiview: None,
         });
 
-        let num_indices = INDICES.len() as u32;
-
-        const SPACE_BETWEEN: f32 = 3.0;
-        let instances = (0..NUM_INSTANCES_PER_ROW)
-            .flat_map(|z| {
-                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                    let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-                    let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-
-                    let position = cgmath::Vector3 { x, y: 0.0, z };
-
-                    let rotation = if position.is_zero() {
-                        cgmath::Quaternion::from_axis_angle(
-                            cgmath::Vector3::unit_z(),
-                            cgmath::Deg(0.0),
-                        )
-                    } else {
-                        cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
-                    };
-
-                    Instance { position, rotation }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        // Model
-        //let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
-        let assets_dir = std::path::Path::new("./examples/load-model/assets");
-        let obj_model = Model::load(
-            &device,
-            &queue,
-            &texture_bind_group_layout,
-            assets_dir.join("cube.obj"),
-        )
-        .unwrap();
-
         // Depth buffer
         let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
@@ -361,7 +351,6 @@ impl State {
             size,
             render_pipeline,
             obj_model,
-            num_indices,
             diffuse_texture,
             diffuse_bind_group,
             camera,
