@@ -552,13 +552,13 @@ impl State {
                 &self.light_bind_group,
             );
             // draw the instances of the cube
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw_model_instanced_with_lighting(
-                &self.obj_model,
-                0..self.instances.len() as u32,
-                &self.camera_bind_group,
-                &self.light_bind_group,
-            );
+            // render_pass.set_pipeline(&self.render_pipeline);
+            // render_pass.draw_model_instanced_with_lighting(
+            //     &self.obj_model,
+            //     0..self.instances.len() as u32,
+            //     &self.camera_bind_group,
+            //     &self.light_bind_group,
+            // );
         }
 
         self.queue.submit(iter::once(encoder.finish()));
