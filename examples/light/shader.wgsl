@@ -48,6 +48,15 @@ var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
 var s_diffuse: sampler;
 
+struct Light {
+    position: vec3<f32>,
+    _pad1: f32,
+    color: vec3<f32>,
+    _pad2: f32,
+};
+@group(2) @binding(0)
+var<uniform> light: Light;
+
 @fragment
 fn fs_main(vo: VertexOutput) -> @location(0) vec4<f32> {
     return textureSample(t_diffuse, s_diffuse, vo.tex_coords);
