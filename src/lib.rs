@@ -1,2 +1,2 @@
 pub mod scene;
-pub mod texture;
+pub mod resources;

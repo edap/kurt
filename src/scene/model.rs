@@ -4,7 +4,7 @@ use std::path::Path;
 use tobj::LoadOptions;
 use wgpu::util::DeviceExt;
 
-use crate::texture::texture;
+use crate::resources::texture;
 
 // model.rs
 pub trait Vertex {

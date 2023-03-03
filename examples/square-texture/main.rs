@@ -7,7 +7,7 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use kurt::texture::texture::Texture;
+use kurt::resources::texture::Texture;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

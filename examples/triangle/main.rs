@@ -61,10 +61,6 @@ impl State {
             backends: wgpu::Backends::all(),
             dx12_shader_compiler: Default::default(),
         });
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-
-        let surface = unsafe { instance.create_surface(&window) };
 
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
         let adapter = instance
