@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::path::Path;
 use tobj::LoadOptions;
 use wgpu::util::DeviceExt;
+//use std::ops::Range;
 
 use crate::resources::texture;
 

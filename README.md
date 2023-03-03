@@ -26,6 +26,13 @@ lights
 
 load-model
 
+## web assembly
+
+Follow the detailed instruction [here](https://sotrh.github.io/learn-wgpu/beginner/tutorial1-window/#web-assembly) to install all the dependencies.
+
+install [web-pack](https://rustwasm.github.io/wasm-pack/installer/).
+
+
 ## TODO
 
 update to 0.15. Check the new semantic
@@ -40,3 +47,5 @@ compute shaders esample with particles
 resources poll
 
 scene graph
+
+port things https://webgpu.github.io/webgpu-samples/samples/gameOfLife
