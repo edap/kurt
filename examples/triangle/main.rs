@@ -62,6 +62,8 @@ impl State {
             dx12_shader_compiler: Default::default(),
         });
 
+        // The surface needs to live as long as the window that created it.
+        // State owns the window so this should be safe.
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
