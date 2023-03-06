@@ -4,10 +4,10 @@ Toy renderer made while following the webGPU [tutorial](https://sotrh.github.io/
 
 
 
-## examples in order of difficulty
+## examples
 
 
-To run and example:
+To run an example:
 
 cargo run --example square-texture
 
