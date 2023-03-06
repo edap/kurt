@@ -35,8 +35,8 @@ install [web-pack](https://rustwasm.github.io/wasm-pack/installer/).
 
 ## TODO
 
-update to 0.15. Check the new semantic
-https://github.com/sotrh/learn-wgpu/blob/master/code/beginner/tutorial2-surface/src/lib.rs
+
+light example TODO https://sotrh.github.io/learn-wgpu/intermediate/tutorial10-lighting/#specular-lighting
 
 web-assembly build step
 
