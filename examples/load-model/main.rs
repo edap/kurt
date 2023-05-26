@@ -94,7 +94,6 @@ struct State {
     obj_model: Model,
     #[allow(dead_code)]
     diffuse_texture: Texture,
-    diffuse_bind_group: wgpu::BindGroup,
     // NEW!
     camera: Camera,
     camera_controller: CameraController,
@@ -179,21 +178,6 @@ impl State {
                 ],
                 label: Some("texture_bind_group_layout"),
             });
-
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
 
         let camera = Camera {
             eye: (0.0, 1.0, 2.0).into(),
@@ -362,7 +346,6 @@ impl State {
             render_pipeline,
             obj_model,
             diffuse_texture,
-            diffuse_bind_group,
             camera,
             camera_controller,
             camera_buffer,
