@@ -13,10 +13,10 @@ use kurt::scene::camera::Camera;
 use kurt::scene::camera::CameraUniform;
 use kurt::scene::light::LightUniform;
 
+use kurt::resources::texture::Texture;
 use kurt::scene::camera::CameraController;
 use kurt::scene::model::Model;
 use kurt::scene::model::ModelVertex;
-use kurt::resources::texture::Texture;
 
 use kurt::scene::model::{DrawLight, DrawModelWithLighting, Vertex};
 
