@@ -1,7 +1,6 @@
-# kurt
+# KURT
 
-Toy renderer made while following the webGPU [tutorial](https://sotrh.github.io/learn-wgpu/)
-
+Toy renderer using Rust and webGPU 
 
 
 ## examples
@@ -26,19 +25,15 @@ lights
 
 load-model
 
-## web assembly
-
-Follow the detailed instruction [here](https://sotrh.github.io/learn-wgpu/beginner/tutorial1-window/#web-assembly) to install all the dependencies.
-
-install [web-pack](https://rustwasm.github.io/wasm-pack/installer/).
-
 
 ## TODO
 
 
-light example TODO https://sotrh.github.io/learn-wgpu/intermediate/tutorial10-lighting/#specular-lighting
+add light example https://sotrh.github.io/learn-wgpu/intermediate/tutorial10-lighting/#specular-lighting
 
 web-assembly build step
+
+frustum culling
 
 post processing effects + egui
 
@@ -49,3 +44,15 @@ resources poll
 scene graph
 
 port things https://webgpu.github.io/webgpu-samples/samples/gameOfLife
+
+## web assembly
+
+Follow the detailed instruction [here](https://sotrh.github.io/learn-wgpu/beginner/tutorial1-window/#web-assembly) to install all the dependencies.
+
+install [web-pack](https://rustwasm.github.io/wasm-pack/installer/).
+
+
+
+## Resources
+
+[webGPU tutorial](https://sotrh.github.io/learn-wgpu/)
