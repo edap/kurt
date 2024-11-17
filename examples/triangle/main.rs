@@ -67,7 +67,11 @@ impl State {
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
+                // power_preference: wgpu::PowerPreference::default(),
+                // this is because of the issue opened on github. When enabling your Nvidia
+                // graphics card, you have to specify wgpu::PowerPreference::HighPerformance
+                // Otherwise, it works fine with wgpu::PowerPreference::default()
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })
