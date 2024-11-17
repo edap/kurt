@@ -9,13 +9,13 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+use kurt::resources::texture::Texture;
 use kurt::scene::light::LightUniform;
 use kurt::scene::model::DrawLight;
 use kurt::scene::model::DrawModelWithLighting;
 use kurt::scene::{camera::Camera, model};
 use kurt::scene::{camera::CameraController, model::Vertex};
 use kurt::scene::{camera::CameraUniform, model::Model};
-use kurt::resources::texture::Texture;
 
 // How many instances?
 const NUM_INSTANCES_PER_ROW: u32 = 10;
@@ -221,9 +221,8 @@ impl State {
         let surface_format = surface_caps
             .formats
             .iter()
+            .find(|f| f.is_srgb())
             .copied()
-            .filter(|f| f.describe().srgb)
-            .next()
             .unwrap_or(surface_caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

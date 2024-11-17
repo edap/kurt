@@ -7,10 +7,10 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+use kurt::resources::texture::Texture;
 use kurt::scene::camera::Camera;
 use kurt::scene::camera::CameraController;
 use kurt::scene::camera::CameraUniform;
-use kurt::resources::texture::Texture;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -125,9 +125,8 @@ impl State {
         let surface_format = surface_caps
             .formats
             .iter()
+            .find(|f| f.is_srgb())
             .copied()
-            .filter(|f| f.describe().srgb)
-            .next()
             .unwrap_or(surface_caps.formats[0]);
 
         let config = wgpu::SurfaceConfiguration {

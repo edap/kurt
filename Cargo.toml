@@ -7,10 +7,7 @@ authors = ["Davide Prati <info@davideprati.com>"]
 resolver = "2"
 homepage = "https://github.com/edapx/kurt"
 repository = "https://github.com/edapx/kurt"
-exclude = [
-  "screenshots/*",
-  "web/*"
-]
+exclude = ["screenshots/*", "web/*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -25,13 +22,13 @@ glob = "0.3"
 [dependencies]
 cfg-if = "1"
 anyhow = "1.0"
-bytemuck = { version = "1.12", features = [ "derive" ] }
+bytemuck = { version = "1.12", features = ["derive"] }
 cgmath = "0.18"
 env_logger = "0.10"
 pollster = "0.2"
 log = "0.4"
-tobj = { version = "3.2", features = ["async"]}
-wgpu = { version = "0.15"}
+tobj = { version = "3.2", features = ["async"] }
+wgpu = { version = "0.16" }
 winit = "0.27"
 
 [dependencies.image]
@@ -42,15 +39,13 @@ features = ["png", "jpeg"]
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 reqwest = { version = "0.11" }
 console_error_panic_hook = "0.1"
-console_log = "0.2"
-# at the moment, examples work in the browser using webGL, as webGPU support
-# is not stable
-wgpu = { version = "0.15", features = ["webgl"]}
+console_log = "1.0"
+# wgpu = { version = "22.0", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
-    "Document",
-    "Window",
-    "Element",
-    "Location",
-]}
+  "Document",
+  "Window",
+  "Element",
+  "Location",
+] }
