@@ -5,7 +5,8 @@ use std::iter;
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::EventLoop,
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowBuilder},
 };
 
@@ -84,8 +85,9 @@ impl InstanceRaw {
     }
 }
 
-struct State {
-    surface: wgpu::Surface,
+struct State<'a> {
+    surface: wgpu::Surface<'a>,
+    window: &'a Window,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -105,14 +107,17 @@ struct State {
     depth_texture: Texture,
 }
 
-impl State {
-    async fn new(window: &Window) -> Self {
+impl<'a> State<'a> {
+    async fn new(window: &'a Window) -> State<'a> {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            dx12_shader_compiler: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            backends: wgpu::Backends::PRIMARY,
+            #[cfg(target_arch = "wasm32")]
+            backends: wgpu::Backends::GL,
+            ..Default::default()
         });
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let surface = instance.create_surface(window).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -124,9 +129,14 @@ impl State {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::empty(),
+                    required_limits: if cfg!(target_arch = "wasm32") {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    } else {
+                        wgpu::Limits::default()
+                    },
                     label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::default(),
+                    memory_hints: Default::default(),
                 },
                 None, // Trace path
             )
@@ -148,6 +158,7 @@ impl State {
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
@@ -284,6 +295,7 @@ impl State {
                 entry_point: "vs_main",
                 //buffers: &[Vertex::desc()],
                 buffers: &[ModelVertex::desc(), InstanceRaw::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -296,6 +308,7 @@ impl State {
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -331,6 +344,7 @@ impl State {
             // If the pipeline will be used with a multiview render pass, this
             // indicates how many array layers the attachments will have.
             multiview: None,
+            cache: None,
         });
 
         // Depth buffer
@@ -338,6 +352,7 @@ impl State {
 
         Self {
             surface,
+            window,
             device,
             queue,
             config,
@@ -409,17 +424,19 @@ impl State {
                             b: 0.3,
                             a: 1.0,
                         }),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
             });
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_pipeline(&self.render_pipeline);
@@ -437,61 +454,76 @@ impl State {
     }
 }
 
-fn main() {
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
+pub async fn run() {
     env_logger::init();
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     // State::new uses async code, so we're going to wait for it to finish
     let mut state = pollster::block_on(State::new(&window));
+    let mut surface_configured = false;
 
-    event_loop.run(move |event, _, control_flow| {
-        match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == window.id() => {
-                if !state.input(event) {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => *control_flow = ControlFlow::Exit,
-                        WindowEvent::Resized(physical_size) => {
-                            state.resize(*physical_size);
+    event_loop
+        .run(move |event, control_flow| {
+            match event {
+                Event::WindowEvent {
+                    ref event,
+                    window_id,
+                } if window_id == window.id() => {
+                    if !state.input(event) {
+                        match event {
+                            WindowEvent::CloseRequested
+                            | WindowEvent::KeyboardInput {
+                                event:
+                                    KeyEvent {
+                                        state: ElementState::Pressed,
+                                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                                        ..
+                                    },
+                                ..
+                            } => control_flow.exit(),
+                            WindowEvent::Resized(physical_size) => {
+                                surface_configured = true;
+                                state.resize(*physical_size);
+                            }
+                            WindowEvent::RedrawRequested => {
+                                // This tells winit that we want another frame after this one
+                                state.window().request_redraw();
+
+                                if !surface_configured {
+                                    return;
+                                }
+
+                                state.update();
+                                match state.render() {
+                                    Ok(_) => {}
+                                    // Reconfigure the surface if it's lost or outdated
+                                    Err(
+                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                                    ) => state.resize(state.size),
+                                    // The system is out of memory, we should probably quit
+                                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                                        log::error!("OutOfMemory");
+                                        control_flow.exit();
+                                    }
+
+                                    // This happens when the a frame takes too long to present
+                                    Err(wgpu::SurfaceError::Timeout) => {
+                                        log::warn!("Surface timeout")
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
-                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            // new_inner_size is &mut so w have to dereference it twice
-                            state.resize(**new_inner_size);
-                        }
-                        _ => {}
                     }
                 }
+                _ => {}
             }
-            Event::RedrawRequested(window_id) if window_id == window.id() => {
-                state.update();
-                match state.render() {
-                    Ok(_) => {}
-                    // Reconfigure the surface if lost
-                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                    // The system is out of memory, we should probably quit
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    // All other errors (Outdated, Timeout) should be resolved by the next frame
-                    Err(e) => eprintln!("{:?}", e),
-                }
-            }
-            Event::MainEventsCleared => {
-                // RedrawRequested will only trigger once, unless we manually
-                // request it.
-                window.request_redraw();
-            }
-            _ => {}
-        }
-    });
+        })
+        .unwrap();
+}
+
+fn main() {
+    pollster::block_on(run());
 }
