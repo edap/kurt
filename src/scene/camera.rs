@@ -17,7 +17,7 @@ const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
+pub struct CameraUniform {
     view_position: [f32; 4],
     view_proj: [[f32; 4]; 4],
 }
@@ -29,7 +29,7 @@ impl Default for CameraUniform {
 }
 
 impl CameraUniform {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             view_position: [0.0; 4],
             view_proj: cgmath::Matrix4::identity().into(),
@@ -37,7 +37,7 @@ impl CameraUniform {
     }
 
     // UPDATED!
-    fn update_view_proj(&mut self, camera: &camera::Camera, projection: &camera::Projection) {
+    pub fn update_view_proj(&mut self, camera: &Camera, projection: &Projection) {
         self.view_position = camera.position.to_homogeneous().into();
         self.view_proj = (projection.calc_matrix() * camera.calc_matrix()).into()
     }

@@ -9,9 +9,7 @@ use winit::{
 };
 
 use kurt::resources::texture::Texture;
-use kurt::scene::camera::Camera;
-use kurt::scene::camera::CameraController;
-use kurt::scene::camera::CameraUniform;
+use kurt::scene::camera;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -82,15 +80,17 @@ struct State<'a> {
     diffuse_texture: Texture,
     diffuse_bind_group: wgpu::BindGroup,
     // NEW!
-    camera: Camera,
-    camera_controller: CameraController,
-    camera_uniform: CameraUniform,
+    camera: camera::Camera,
+    projection: camera::Projection,
+    camera_controller: camera::CameraController,
+    camera_uniform: camera::CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    mouse_pressed: bool,
 }
 
 impl<'a> State<'a> {
-    async fn new(window: &Window) -> State<'a> {
+    async fn new(window: &'a Window) -> State<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -198,19 +198,13 @@ impl<'a> State<'a> {
             label: Some("diffuse_bind_group"),
         });
 
-        let camera = Camera {
-            eye: (0.0, 1.0, 2.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
-            up: cgmath::Vector3::unit_y(),
-            aspect: config.width as f32 / config.height as f32,
-            fovy: 45.0,
-            znear: 0.1,
-            zfar: 100.0,
-        };
-        let camera_controller = CameraController::new(0.2);
+        let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let projection =
+            camera::Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
+        let camera_controller = camera::CameraController::new(4.0, 0.4);
 
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
+        let mut camera_uniform = camera::CameraUniform::new();
+        camera_uniform.update_view_proj(&camera, &projection);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -326,21 +320,25 @@ impl<'a> State<'a> {
             diffuse_texture,
             diffuse_bind_group,
             camera,
+            projection,
             camera_controller,
             camera_buffer,
             camera_bind_group,
             camera_uniform,
+            mouse_pressed: false,
         }
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
+            self.projection.resize(new_size.width, new_size.height);
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
 
-            self.camera.aspect = self.config.width as f32 / self.config.height as f32;
+            self.projection
+                .resize(self.config.width, self.config.height);
         }
     }
 
@@ -348,13 +346,38 @@ impl<'a> State<'a> {
         &self.window
     }
 
+    // UPDATED!
     fn input(&mut self, event: &WindowEvent) -> bool {
-        self.camera_controller.process_events(event)
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(key),
+                        state,
+                        ..
+                    },
+                ..
+            } => self.camera_controller.process_keyboard(*key, *state),
+            WindowEvent::MouseWheel { delta, .. } => {
+                self.camera_controller.process_scroll(delta);
+                true
+            }
+            WindowEvent::MouseInput {
+                button: MouseButton::Left,
+                state,
+                ..
+            } => {
+                self.mouse_pressed = *state == ElementState::Pressed;
+                true
+            }
+            _ => false,
+        }
     }
 
-    fn update(&mut self) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
+    fn update(&mut self, dt: std::time::Duration) {
+        self.camera_controller.update_camera(&mut self.camera, dt);
+        self.camera_uniform
+            .update_view_proj(&self.camera, &self.projection);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -421,6 +444,7 @@ pub async fn run() {
     // State::new uses async code, so we're going to wait for it to finish
     let mut state = State::new(&window).await;
     let mut surface_configured = false;
+    let mut last_render_time = std::time::Instant::now(); // NEW!
 
     event_loop
         .run(move |event, control_flow| {
@@ -449,11 +473,13 @@ pub async fn run() {
                                 // This tells winit that we want another frame after this one
                                 state.window().request_redraw();
 
-                                if !surface_configured {
-                                    return;
-                                }
-
-                                state.update();
+                                // if !surface_configured {
+                                //     return;
+                                // }
+                                let now = std::time::Instant::now();
+                                let dt = now - last_render_time;
+                                last_render_time = now;
+                                state.update(dt);
                                 match state.render() {
                                     Ok(_) => {}
                                     // Reconfigure the surface if it's lost or outdated
