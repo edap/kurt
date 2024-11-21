@@ -232,6 +232,7 @@ impl<'a> State<'a> {
             window,
         }
     }
+
     pub fn window(&self) -> &Window {
         &self.window
     }

@@ -385,6 +385,10 @@ impl<'a> State<'a> {
         }
     }
 
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+
     fn input(&mut self, event: &WindowEvent) -> bool {
         self.camera_controller.process_events(event)
     }
@@ -453,15 +457,16 @@ impl<'a> State<'a> {
         Ok(())
     }
 }
-
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
+    // Window setup...
+
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     // State::new uses async code, so we're going to wait for it to finish
-    let mut state = pollster::block_on(State::new(&window));
+    let mut state = State::new(&window).await;
     let mut surface_configured = false;
 
     event_loop
@@ -470,7 +475,7 @@ pub async fn run() {
                 Event::WindowEvent {
                     ref event,
                     window_id,
-                } if window_id == window.id() => {
+                } if window_id == state.window().id() => {
                     if !state.input(event) {
                         match event {
                             WindowEvent::CloseRequested
