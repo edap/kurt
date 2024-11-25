@@ -9,6 +9,7 @@ use winit::{
 };
 
 use kurt::resources::texture::Texture;
+use kurt::scene::camera;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -76,9 +77,9 @@ struct State<'a> {
     #[allow(dead_code)]
     diffuse_texture: kurt::resources::texture::Texture,
     diffuse_bind_group: wgpu::BindGroup,
-    camera_controller: CameraController,
-    camera_uniform: CameraUniform,
-    camera_staging: CameraStaging,
+    camera_controller: camera::CameraController,
+    camera_uniform: camera::CameraUniform,
+    camera_staging: camera::CameraStaging,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     size: winit::dpi::PhysicalSize<u32>,
@@ -196,7 +197,7 @@ impl<'a> State<'a> {
             label: Some("diffuse_bind_group"),
         });
 
-        let camera = Camera {
+        let camera = camera::Camera {
             eye: (0.0, 1.0, 2.0).into(),
             target: (0.0, 0.0, 0.0).into(),
             up: cgmath::Vector3::unit_y(),
@@ -205,10 +206,10 @@ impl<'a> State<'a> {
             znear: 0.1,
             zfar: 100.0,
         };
-        let camera_controller = CameraController::new(0.2);
+        let camera_controller = camera::CameraController::new(0.2);
 
-        let mut camera_uniform = CameraUniform::new();
-        let camera_staging = CameraStaging::new(camera);
+        let mut camera_uniform = camera::CameraUniform::new();
+        let camera_staging = camera::CameraStaging::new(camera);
         camera_staging.update_camera(&mut camera_uniform);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
