@@ -9,7 +9,6 @@ use winit::{
 };
 
 use kurt::resources::texture::Texture;
-use kurt::scene::camera;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -19,7 +18,7 @@ struct Vertex {
 }
 
 impl Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
@@ -67,26 +66,23 @@ const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
 struct State<'a> {
     surface: wgpu::Surface<'a>,
-    window: &'a Window,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     #[allow(dead_code)]
-    diffuse_texture: Texture,
+    diffuse_texture: kurt::resources::texture::Texture,
     diffuse_bind_group: wgpu::BindGroup,
-    // NEW!
-    camera: camera::Camera,
-    projection: camera::Projection,
-    camera_controller: camera::CameraController,
-    camera_uniform: camera::CameraUniform,
+    camera_controller: CameraController,
+    camera_uniform: CameraUniform,
+    camera_staging: CameraStaging,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    mouse_pressed: bool,
+    size: winit::dpi::PhysicalSize<u32>,
+    window: &'a Window,
 }
 
 impl<'a> State<'a> {
@@ -104,31 +100,27 @@ impl<'a> State<'a> {
         });
 
         let surface = instance.create_surface(window).unwrap();
+
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                //power_preference: wgpu::PowerPreference::default(),
-                // this is because of the issue opened on github. When enabling your Nvidia
-                // graphics card, you have to specify wgpu::PowerPreference::HighPerformance
-                // Otherwise, it works fine with wgpu::PowerPreference::default()
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })
             .await
             .unwrap();
-
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
+                    label: None,
                     required_features: wgpu::Features::empty(),
                     // WebGL doesn't support all of wgpu's features, so if
-                    // we're building for the web, we'll have to disable some.
+                    // we're building for the web we'll have to disable some.
                     required_limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults()
                     } else {
                         wgpu::Limits::default()
                     },
-                    label: None,
                     memory_hints: Default::default(),
                 },
                 None, // Trace path
@@ -137,28 +129,34 @@ impl<'a> State<'a> {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
+        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
+        // one will result all the colors comming out darker. If you want to support non
+        // Srgb surfaces, you'll need to account for that when drawing to the frame.
         let surface_format = surface_caps
             .formats
             .iter()
-            .find(|f| f.is_srgb())
             .copied()
+            .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
-
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            present_mode: surface_caps.present_modes[0],
+            alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
-        surface.configure(&device, &config);
 
         let diffuse_bytes = include_bytes!("square.png");
-        let diffuse_texture =
-            Texture::from_bytes(&device, &queue, diffuse_bytes, "square.png").unwrap();
+        let diffuse_texture = kurt::resources::texture::Texture::from_bytes(
+            &device,
+            &queue,
+            diffuse_bytes,
+            "square.png",
+        )
+        .unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -198,13 +196,20 @@ impl<'a> State<'a> {
             label: Some("diffuse_bind_group"),
         });
 
-        let camera = camera::Camera::new((0.0, 1.0, 2.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let projection =
-            camera::Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
-        let camera_controller = camera::CameraController::new(4.0, 0.4);
+        let camera = Camera {
+            eye: (0.0, 1.0, 2.0).into(),
+            target: (0.0, 0.0, 0.0).into(),
+            up: cgmath::Vector3::unit_y(),
+            aspect: config.width as f32 / config.height as f32,
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
+        let camera_controller = CameraController::new(0.2);
 
-        let mut camera_uniform = camera::CameraUniform::new();
-        camera_uniform.update_view_proj(&camera, &projection);
+        let mut camera_uniform = CameraUniform::new();
+        let camera_staging = CameraStaging::new(camera);
+        camera_staging.update_camera(&mut camera_uniform);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -255,7 +260,7 @@ impl<'a> State<'a> {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[Vertex::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -268,14 +273,15 @@ impl<'a> State<'a> {
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
+                // or Features::POLYGON_MODE_POINT
                 polygon_mode: wgpu::PolygonMode::Fill,
                 // Requires Features::DEPTH_CLIP_CONTROL
                 unclipped_depth: false,
@@ -291,6 +297,7 @@ impl<'a> State<'a> {
             // If the pipeline will be used with a multiview render pass, this
             // indicates how many array layers the attachments will have.
             multiview: None,
+            // Useful for optimizing shader compilation on Android
             cache: None,
         });
 
@@ -308,37 +315,22 @@ impl<'a> State<'a> {
 
         Self {
             surface,
-            window,
             device,
             queue,
             config,
-            size,
             render_pipeline,
             vertex_buffer,
             index_buffer,
             num_indices,
             diffuse_texture,
             diffuse_bind_group,
-            camera,
-            projection,
             camera_controller,
+            camera_staging,
             camera_buffer,
             camera_bind_group,
             camera_uniform,
-            mouse_pressed: false,
-        }
-    }
-
-    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.projection.resize(new_size.width, new_size.height);
-            self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
-
-            self.projection
-                .resize(self.config.width, self.config.height);
+            size,
+            window,
         }
     }
 
@@ -346,38 +338,27 @@ impl<'a> State<'a> {
         &self.window
     }
 
-    // UPDATED!
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(key),
-                        state,
-                        ..
-                    },
-                ..
-            } => self.camera_controller.process_keyboard(*key, *state),
-            WindowEvent::MouseWheel { delta, .. } => {
-                self.camera_controller.process_scroll(delta);
-                true
-            }
-            WindowEvent::MouseInput {
-                button: MouseButton::Left,
-                state,
-                ..
-            } => {
-                self.mouse_pressed = *state == ElementState::Pressed;
-                true
-            }
-            _ => false,
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.config.width = new_size.width;
+            self.config.height = new_size.height;
+            self.surface.configure(&self.device, &self.config);
+
+            self.camera_staging.camera.aspect =
+                self.config.width as f32 / self.config.height as f32;
         }
     }
 
-    fn update(&mut self, dt: std::time::Duration) {
-        self.camera_controller.update_camera(&mut self.camera, dt);
-        self.camera_uniform
-            .update_view_proj(&self.camera, &self.projection);
+    fn input(&mut self, event: &WindowEvent) -> bool {
+        self.camera_controller.process_events(event)
+    }
+
+    fn update(&mut self) {
+        self.camera_controller
+            .update_camera(&mut self.camera_staging.camera);
+        self.camera_staging.model_rotation += cgmath::Deg(2.0);
+        self.camera_staging.update_camera(&mut self.camera_uniform);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -433,10 +414,11 @@ impl<'a> State<'a> {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-pub async fn run() {
-    // Window setup...
+fn main() {
+    pollster::block_on(run());
+}
 
+async fn run() {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
@@ -444,7 +426,6 @@ pub async fn run() {
     // State::new uses async code, so we're going to wait for it to finish
     let mut state = State::new(&window).await;
     let mut surface_configured = false;
-    let mut last_render_time = std::time::Instant::now(); // NEW!
 
     event_loop
         .run(move |event, control_flow| {
@@ -473,13 +454,11 @@ pub async fn run() {
                                 // This tells winit that we want another frame after this one
                                 state.window().request_redraw();
 
-                                // if !surface_configured {
-                                //     return;
-                                // }
-                                let now = std::time::Instant::now();
-                                let dt = now - last_render_time;
-                                last_render_time = now;
-                                state.update(dt);
+                                if !surface_configured {
+                                    return;
+                                }
+
+                                state.update();
                                 match state.render() {
                                     Ok(_) => {}
                                     // Reconfigure the surface if it's lost or outdated
@@ -506,8 +485,4 @@ pub async fn run() {
             }
         })
         .unwrap();
-}
-
-fn main() {
-    pollster::block_on(run());
 }
