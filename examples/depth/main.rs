@@ -6,13 +6,12 @@ use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowBuilder},
 };
 
 use kurt::resources::texture::Texture;
-use kurt::scene::camera::Camera;
-use kurt::scene::camera::CameraController;
-use kurt::scene::camera::CameraUniform;
+use kurt::scene::camera;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -141,8 +140,8 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
-struct State {
-    surface: wgpu::Surface,
+struct State<'a> {
+    surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -154,26 +153,29 @@ struct State {
     #[allow(dead_code)]
     diffuse_texture: Texture,
     diffuse_bind_group: wgpu::BindGroup,
-    // NEW!
-    camera: Camera,
-    camera_controller: CameraController,
-    camera_uniform: CameraUniform,
+    camera: camera::Camera,
+    camera_controller: camera::CameraController,
+    camera_uniform: camera::CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
     depth_texture: Texture,
+    window: &'a Window,
 }
 
-impl State {
-    async fn new(window: &Window) -> Self {
+impl<'a> State<'a> {
+    async fn new(window: &'a Window) -> State<'a> {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            dx12_shader_compiler: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            backends: wgpu::Backends::PRIMARY,
+            #[cfg(target_arch = "wasm32")]
+            backends: wgpu::Backends::GL,
+            ..Default::default()
         });
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let surface = instance.create_surface(window).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -182,17 +184,23 @@ impl State {
             })
             .await
             .unwrap();
+
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::default(),
-                },
-                None, // Trace path
-            )
-            .await
-            .unwrap();
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::empty(),
+                        required_limits: if cfg!(target_arch = "wasm32") {
+                            wgpu::Limits::downlevel_webgl2_defaults()
+                        } else {
+                            wgpu::Limits::default()
+                        },
+                        label: None,
+                        memory_hints: Default::default(),
+            },
+            None, // Trace path
+        )
+        .await
+        .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -210,6 +218,7 @@ impl State {
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
@@ -255,7 +264,7 @@ impl State {
             label: Some("diffuse_bind_group"),
         });
 
-        let camera = Camera {
+        let camera = camera::Camera {
             eye: (0.0, 1.0, 2.0).into(),
             target: (0.0, 0.0, 0.0).into(),
             up: cgmath::Vector3::unit_y(),
@@ -264,10 +273,10 @@ impl State {
             znear: 0.1,
             zfar: 100.0,
         };
-        let camera_controller = CameraController::new(0.2);
+        let camera_controller = camera::CameraController::new(0.2);
 
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
+        let mut camera_uniform = camera::CameraUniform::new();
+        camera.update_camera_uniform(&mut camera_uniform);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -314,12 +323,14 @@ impl State {
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
+
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                //buffers: &[Vertex::desc()],
                 buffers: &[Vertex::desc(), InstanceRaw::desc()],
+                compilation_options: Default::default(),
             },
+
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -331,6 +342,7 @@ impl State {
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -366,6 +378,7 @@ impl State {
             // If the pipeline will be used with a multiview render pass, this
             // indicates how many array layers the attachments will have.
             multiview: None,
+            cache: None,
         });
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -437,7 +450,12 @@ impl State {
             instances,
             instance_buffer,
             depth_texture,
+            window,
         }
+    }
+
+    pub fn window(&self) -> &Window {
+        &self.window
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -459,8 +477,9 @@ impl State {
     }
 
     fn update(&mut self) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
+        self.camera_controller
+        .update_camera(&mut self.camera);
+        self.camera.update_camera_uniform(&mut self.camera_uniform);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -493,17 +512,19 @@ impl State {
                             b: 0.3,
                             a: 1.0,
                         }),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
@@ -529,60 +550,74 @@ impl State {
 }
 
 fn main() {
+    pollster::block_on(run());
+}
+
+async fn run() {
     env_logger::init();
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     // State::new uses async code, so we're going to wait for it to finish
-    let mut state = pollster::block_on(State::new(&window));
+    let mut state = State::new(&window).await;
+    let mut surface_configured = false;
 
-    event_loop.run(move |event, _, control_flow| {
+    event_loop
+    .run(move |event, control_flow| {
         match event {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == window.id() => {
+            } if window_id == state.window().id() => {
                 if !state.input(event) {
                     match event {
                         WindowEvent::CloseRequested
                         | WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                                    ..
-                                },
+                            event:
+                            KeyEvent {
+                                state: ElementState::Pressed,
+                                physical_key: PhysicalKey::Code(KeyCode::Escape),
+         ..
+                            },
                             ..
-                        } => *control_flow = ControlFlow::Exit,
-                        WindowEvent::Resized(physical_size) => {
-                            state.resize(*physical_size);
-                        }
-                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            // new_inner_size is &mut so w have to dereference it twice
-                            state.resize(**new_inner_size);
-                        }
-                        _ => {}
+                        } => control_flow.exit(),
+         WindowEvent::Resized(physical_size) => {
+             surface_configured = true;
+             state.resize(*physical_size);
+         }
+         WindowEvent::RedrawRequested => {
+             // This tells winit that we want another frame after this one
+             state.window().request_redraw();
+
+             if !surface_configured {
+                 return;
+             }
+
+             state.update();
+             match state.render() {
+                 Ok(_) => {}
+                 // Reconfigure the surface if it's lost or outdated
+                 Err(
+                     wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                 ) => state.resize(state.size),
+         // The system is out of memory, we should probably quit
+         Err(wgpu::SurfaceError::OutOfMemory) => {
+             log::error!("OutOfMemory");
+             control_flow.exit();
+         }
+
+         // This happens when the a frame takes too long to present
+         Err(wgpu::SurfaceError::Timeout) => {
+             log::warn!("Surface timeout")
+         }
+             }
+         }
+         _ => {}
                     }
                 }
             }
-            Event::RedrawRequested(window_id) if window_id == window.id() => {
-                state.update();
-                match state.render() {
-                    Ok(_) => {}
-                    // Reconfigure the surface if lost
-                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                    // The system is out of memory, we should probably quit
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    // All other errors (Outdated, Timeout) should be resolved by the next frame
-                    Err(e) => eprintln!("{:?}", e),
-                }
-            }
-            Event::MainEventsCleared => {
-                // RedrawRequested will only trigger once, unless we manually
-                // request it.
-                window.request_redraw();
-            }
             _ => {}
         }
-    });
+    })
+    .unwrap();
 }

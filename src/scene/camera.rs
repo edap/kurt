@@ -29,6 +29,11 @@ impl Camera {
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
         proj * view
     }
+
+    pub fn update_camera_uniform(&self, camera_uniform: &mut CameraUniform) {
+        camera_uniform.model_view_proj =
+            (OPENGL_TO_WGPU_MATRIX * self.build_view_projection_matrix()).into();
+    }
 }
 
 pub struct CameraStaging {
