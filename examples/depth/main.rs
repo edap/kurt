@@ -186,21 +186,21 @@ impl<'a> State<'a> {
             .unwrap();
 
         let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
-                        required_limits: if cfg!(target_arch = "wasm32") {
-                            wgpu::Limits::downlevel_webgl2_defaults()
-                        } else {
-                            wgpu::Limits::default()
-                        },
-                        label: None,
-                        memory_hints: Default::default(),
-            },
-            None, // Trace path
-        )
-        .await
-        .unwrap();
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::empty(),
+                    required_limits: if cfg!(target_arch = "wasm32") {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    } else {
+                        wgpu::Limits::default()
+                    },
+                    label: None,
+                    memory_hints: Default::default(),
+                },
+                None, // Trace path
+            )
+            .await
+            .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -477,8 +477,7 @@ impl<'a> State<'a> {
     }
 
     fn update(&mut self) {
-        self.camera_controller
-        .update_camera(&mut self.camera);
+        self.camera_controller.update_camera(&mut self.camera);
         self.camera.update_camera_uniform(&mut self.camera_uniform);
         self.queue.write_buffer(
             &self.camera_buffer,
@@ -563,61 +562,61 @@ async fn run() {
     let mut surface_configured = false;
 
     event_loop
-    .run(move |event, control_flow| {
-        match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == state.window().id() => {
-                if !state.input(event) {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            event:
-                            KeyEvent {
-                                state: ElementState::Pressed,
-                                physical_key: PhysicalKey::Code(KeyCode::Escape),
-         ..
-                            },
-                            ..
-                        } => control_flow.exit(),
-         WindowEvent::Resized(physical_size) => {
-             surface_configured = true;
-             state.resize(*physical_size);
-         }
-         WindowEvent::RedrawRequested => {
-             // This tells winit that we want another frame after this one
-             state.window().request_redraw();
+        .run(move |event, control_flow| {
+            match event {
+                Event::WindowEvent {
+                    ref event,
+                    window_id,
+                } if window_id == state.window().id() => {
+                    if !state.input(event) {
+                        match event {
+                            WindowEvent::CloseRequested
+                            | WindowEvent::KeyboardInput {
+                                event:
+                                    KeyEvent {
+                                        state: ElementState::Pressed,
+                                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                                        ..
+                                    },
+                                ..
+                            } => control_flow.exit(),
+                            WindowEvent::Resized(physical_size) => {
+                                surface_configured = true;
+                                state.resize(*physical_size);
+                            }
+                            WindowEvent::RedrawRequested => {
+                                // This tells winit that we want another frame after this one
+                                state.window().request_redraw();
 
-             if !surface_configured {
-                 return;
-             }
+                                if !surface_configured {
+                                    return;
+                                }
 
-             state.update();
-             match state.render() {
-                 Ok(_) => {}
-                 // Reconfigure the surface if it's lost or outdated
-                 Err(
-                     wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
-                 ) => state.resize(state.size),
-         // The system is out of memory, we should probably quit
-         Err(wgpu::SurfaceError::OutOfMemory) => {
-             log::error!("OutOfMemory");
-             control_flow.exit();
-         }
+                                state.update();
+                                match state.render() {
+                                    Ok(_) => {}
+                                    // Reconfigure the surface if it's lost or outdated
+                                    Err(
+                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+                                    ) => state.resize(state.size),
+                                    // The system is out of memory, we should probably quit
+                                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                                        log::error!("OutOfMemory");
+                                        control_flow.exit();
+                                    }
 
-         // This happens when the a frame takes too long to present
-         Err(wgpu::SurfaceError::Timeout) => {
-             log::warn!("Surface timeout")
-         }
-             }
-         }
-         _ => {}
+                                    // This happens when the a frame takes too long to present
+                                    Err(wgpu::SurfaceError::Timeout) => {
+                                        log::warn!("Surface timeout")
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
+                _ => {}
             }
-            _ => {}
-        }
-    })
-    .unwrap();
+        })
+        .unwrap();
 }
